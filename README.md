@@ -17,19 +17,19 @@ The project intentionally avoids LangChain, queues, databases, frontends, and co
 
 ```text
 repopilot-lite/
-├── repopilot_lite/
-│   ├── main.py        # FastAPI app and routes
-│   ├── models.py      # Pydantic request, response, task, log, and result models
-│   ├── planner.py     # Fixed task planning logic
-│   ├── executor.py    # Step execution and logging
-│   ├── tools.py       # ToolRegistry and repository tools
-│   └── storage.py     # JSON file persistence
-├── tests/
-│   └── test_api.py
-├── data/              # Created at runtime for tasks.json and logs.json
-├── requirements.txt
-├── pyproject.toml
-└── README.md
++-- repopilot_lite/
+|   +-- main.py        # FastAPI app and routes
+|   +-- models.py      # Pydantic request, response, task, log, and result models
+|   +-- planner.py     # Fixed task planning logic
+|   +-- executor.py    # Step execution and logging
+|   +-- tools.py       # ToolRegistry and repository tools
+|   +-- storage.py     # JSON file persistence
++-- tests/
+|   +-- test_api.py
++-- data/              # Created at runtime for tasks.json and logs.json
++-- requirements.txt
++-- pyproject.toml
++-- README.md
 ```
 
 ## Install
