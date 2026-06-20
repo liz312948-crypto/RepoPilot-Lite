@@ -9,3 +9,5 @@ venv/
 *.log
 .DS_Store
 data/
+*.egg-info/
+.pytest-tmp/
