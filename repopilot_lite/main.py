@@ -12,8 +12,8 @@ from repopilot_lite.tools import ToolRegistry, create_default_registry
 
 app = FastAPI(
     title="RepoPilot Lite",
-    description="A repository reading and task planning Agent demo.",
-    version="0.1.0",
+    description="A lightweight coding-agent backend prototype for repository understanding and modification planning.",
+    version="0.2.0",
 )
 
 storage = Storage()

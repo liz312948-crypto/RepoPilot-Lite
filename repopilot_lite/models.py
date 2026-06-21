@@ -31,9 +31,19 @@ class PlanStep(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class ModificationPlanStep(BaseModel):
+    title: str
+    target_files: list[str] = Field(default_factory=list)
+    action: str
+    reason: str
+
+
 class TaskResult(BaseModel):
     repo_summary: str
     key_files: list[str] = Field(default_factory=list)
+    modification_plan: list[ModificationPlanStep] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+    llm_used: bool = False
     suggestions: list[str] = Field(default_factory=list)
 
 

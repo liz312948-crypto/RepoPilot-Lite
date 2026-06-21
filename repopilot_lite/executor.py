@@ -69,7 +69,7 @@ class Executor:
             return output
 
         if step_name == "search_keywords":
-            output = self.registry.call("search_text", repo_path=task.repo_path, **args)
+            output = self._search_with_retry(task, args)
             context["search_matches"] = output["matches"]
             return output
 
@@ -86,6 +86,31 @@ class Executor:
             return output
 
         raise ValueError(f"Unknown plan step: {step_name}")
+
+    def _search_with_retry(self, task: TaskRecord, args: dict[str, Any]) -> dict[str, Any]:
+        keywords = list(args.get("keywords", []))
+        max_retries = 2
+        output = self.registry.call("search_text", repo_path=task.repo_path, keywords=keywords)
+        attempts = [{"keywords": output.get("keywords", keywords), "count": output.get("count", 0)}]
+
+        for retry_number in range(1, max_retries + 1):
+            if output.get("matches"):
+                break
+
+            keywords = self._broaden_keywords(task.question, keywords, retry_number)
+            self._log(
+                task,
+                "search_keywords",
+                "RETRY",
+                "No matches found; retrying with broader keywords.",
+                {"retry": retry_number, "keywords": keywords},
+            )
+            output = self.registry.call("search_text", repo_path=task.repo_path, keywords=keywords)
+            attempts.append({"keywords": output.get("keywords", keywords), "count": output.get("count", 0)})
+
+        output["attempts"] = attempts
+        output["retries"] = len(attempts) - 1
+        return output
 
     def _log(
         self,
@@ -112,6 +137,22 @@ class Executor:
             if name == "readme" or name.startswith("readme."):
                 return file_path
         return None
+
+    @staticmethod
+    def _broaden_keywords(question: str, previous_keywords: list[str], retry_number: int) -> list[str]:
+        broad_terms = ["api", "task", "repo", "file", "test", "readme"]
+        if retry_number == 2:
+            broad_terms.extend(["main", "config", "storage", "tool", "executor", "planner"])
+
+        words = list(previous_keywords)
+        for raw_word in question.replace("_", " ").replace("-", " ").split():
+            word = "".join(char for char in raw_word.lower() if char.isalnum())
+            if len(word) >= 4 and word not in words:
+                words.append(word)
+        for term in broad_terms:
+            if term not in words:
+                words.append(term)
+        return words[:12]
 
     @staticmethod
     def _preview(output: dict[str, Any]) -> dict[str, Any]:

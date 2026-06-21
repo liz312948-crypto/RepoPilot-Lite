@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from repopilot_lite.llm_client import OptionalLLMSummarizer
+
 
 IGNORED_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", "dist", "build"}
 TEXT_SUFFIXES = {
@@ -61,7 +63,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register("list_files", "List readable files in a repository.", list_files)
     registry.register("read_file", "Read a text file from a repository by relative path.", read_file)
     registry.register("search_text", "Search text keywords inside repository files.", search_text)
-    registry.register("summarize_repo", "Generate a simple repository summary from collected tool results.", summarize_repo)
+    registry.register("summarize_repo", "Generate repository understanding and modification planning output.", summarize_repo)
     return registry
 
 
@@ -143,13 +145,29 @@ def summarize_repo(
     search_matches = search_matches or []
     key_files = _select_key_files(files, search_matches)
 
+    llm_result = OptionalLLMSummarizer().summarize(
+        repo_name=repo.name,
+        question=question,
+        files=files,
+        readme=readme,
+        search_matches=search_matches,
+    )
+    if llm_result is not None:
+        return _normalize_summary_result(llm_result, key_files)
+
     readme_summary = _compact_text(readme, max_chars=600) if readme else "No README content was found."
     summary = (
-        f"Repository '{repo.name}' contains {len(files)} indexed files. "
+        f"Repository '{repo.name}' contains {len(files)} indexed files and is ready for modification planning. "
         f"The question is: {question}. "
         f"README signal: {readme_summary}"
     )
 
+    modification_plan = _build_modification_plan(question, key_files)
+    risk_notes = [
+        "This prototype only plans changes; it does not edit files automatically.",
+        "Review target files manually before applying any suggested modification.",
+        "Add or update tests before changing behavior in shared modules.",
+    ]
     suggestions = [
         "Start with README and project configuration files to confirm setup and runtime assumptions.",
         "Inspect the listed key files before changing behavior.",
@@ -159,7 +177,14 @@ def summarize_repo(
     if search_matches:
         suggestions.insert(1, "Review keyword matches because they are the most direct links to the question.")
 
-    return {"repo_summary": summary, "key_files": key_files, "suggestions": suggestions}
+    return {
+        "repo_summary": summary,
+        "key_files": key_files,
+        "modification_plan": modification_plan,
+        "risk_notes": risk_notes,
+        "llm_used": False,
+        "suggestions": suggestions,
+    }
 
 
 def _resolve_repo(repo_path: str) -> Path:
@@ -211,6 +236,76 @@ def _select_key_files(files: list[str], search_matches: list[dict[str, Any]]) ->
             weighted.append(file_path)
 
     return weighted[:10]
+
+
+def _build_modification_plan(question: str, key_files: list[str]) -> list[dict[str, Any]]:
+    primary_files = key_files[:3] or ["README.md"]
+    test_files = [file_path for file_path in key_files if "test" in file_path.lower()]
+    if not test_files:
+        test_files = ["tests/"]
+
+    return [
+        {
+            "title": "Confirm existing behavior",
+            "target_files": primary_files,
+            "action": "Read the key files and map the current request flow before editing.",
+            "reason": f"The question '{question}' should be grounded in the current implementation first.",
+        },
+        {
+            "title": "Design the smallest code change",
+            "target_files": primary_files,
+            "action": "Identify the minimal functions or modules that need updates.",
+            "reason": "Keeping the change narrow lowers regression risk and preserves the existing architecture.",
+        },
+        {
+            "title": "Add verification coverage",
+            "target_files": test_files,
+            "action": "Add or update focused tests for the planned behavior.",
+            "reason": "Tests make the modification plan executable and easier to review.",
+        },
+    ]
+
+
+def _normalize_summary_result(result: dict[str, Any], fallback_key_files: list[str]) -> dict[str, Any]:
+    return {
+        "repo_summary": str(result.get("repo_summary") or "LLM summary was unavailable."),
+        "key_files": _string_list(result.get("key_files")) or fallback_key_files,
+        "modification_plan": _modification_plan_list(result.get("modification_plan"), fallback_key_files),
+        "risk_notes": _string_list(result.get("risk_notes"))
+        or ["LLM output should be reviewed before applying any code changes."],
+        "llm_used": bool(result.get("llm_used")),
+        "suggestions": _string_list(result.get("suggestions"))
+        or ["Review key files and tests before making changes."],
+    }
+
+
+def _modification_plan_list(value: Any, fallback_key_files: list[str]) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return _build_modification_plan("requested change", fallback_key_files)
+
+    steps: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        steps.append(
+            {
+                "title": str(item.get("title") or "Review planned change"),
+                "target_files": _string_list(item.get("target_files")) or fallback_key_files[:3],
+                "action": str(item.get("action") or "Inspect the target files."),
+                "reason": str(item.get("reason") or "The step supports safer modification planning."),
+            }
+        )
+
+    fallback_steps = _build_modification_plan("requested change", fallback_key_files)
+    while len(steps) < 3:
+        steps.append(fallback_steps[len(steps)])
+    return steps
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
 
 
 def _compact_text(text: str | None, max_chars: int) -> str:
