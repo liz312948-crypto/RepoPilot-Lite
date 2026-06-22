@@ -4,7 +4,7 @@ RepoPilot-Lite is a lightweight Coding Agent backend prototype for repository un
 
 A developer submits a local repository path and a question, then receives `repo_summary`, `key_files`, `modification_plan`, `risk_notes`, `suggestions`, and execution logs.
 
-[RepoPilot-Lite v0.2 Product Walkthrough](TODO_RELEASE_VIDEO_LINK)
+[RepoPilot-Lite v0.2 Product Walkthrough](https://github.com/liz312948-crypto/RepoPilot-Lite/releases/download/v0.2.0/RepoPilot-Lite-v0.2-Product-Walkthrough.mp4)
 
 ## Why This Project
 
