@@ -1,19 +1,73 @@
 # RepoPilot Lite
 
-RepoPilot Lite is a lightweight coding-agent backend prototype for repository understanding and modification planning. A user submits a local repository path and a question. The system creates a task, plans a small analysis workflow, reads repository context through registered tools, and returns a repository summary, key files, a modification plan, risk notes, and suggestions.
+RepoPilot-Lite is a lightweight Coding Agent backend prototype for repository understanding and modification planning.
 
-This project is intentionally small. It is not a full IDE, does not automatically modify code, and does not provide a production-grade autonomous coding agent. Its focus is the backend shape of a coding-agent workflow: task state, planning, tool execution, logs, fallback behavior, and explainable modification planning.
+A developer submits a local repository path and a question, then receives `repo_summary`, `key_files`, `modification_plan`, `risk_notes`, `suggestions`, and execution logs.
+
+[RepoPilot-Lite v0.2 Product Walkthrough](TODO_RELEASE_VIDEO_LINK)
+
+## Why This Project
+
+RepoPilot-Lite simulates the core backend workflow behind AI coding tools: task creation, planning, tool execution, context collection, modification planning, logs, and fallback behavior.
+
+It is not a full IDE, does not automatically modify code, and does not replace Claude Code, TRAE, or other AI programming tools. The project focuses on a small backend prototype that makes the coding-agent execution path observable, bounded, and easy to explain.
 
 ## Features
 
-- Create and run repository understanding tasks.
-- Fixed Planner steps: `list_files`, `read_readme`, `search_keywords`, `summarize`.
-- Lightweight Agent Loop in `search_keywords`: if the first search has no matches, the Executor broadens keywords and retries at most two times.
-- Modification planning output with target files, actions, and reasons.
-- Optional OpenAI-compatible LLM summarizer controlled by environment variables.
-- Rule-based summarizer fallback when no API key is configured or the LLM call fails.
-- JSON persistence for tasks and logs.
-- FastAPI routes for task lifecycle, logs, and tool discovery.
+- Repository understanding through README reading, file listing, and keyword search.
+- Modification planning with target files, actions, reasons, risk notes, and suggestions.
+- Planner / Executor / ToolRegistry architecture for clear task planning and tool invocation.
+- Lightweight Agent Loop that broadens search keywords when the first search has no matches, capped at two retries.
+- Observable execution logs for each planning and tool-execution step.
+- Optional OpenAI-compatible LLM summarizer using `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`.
+- Rule-based fallback when no LLM key is configured or the LLM call fails.
+
+## Demo Workflow
+
+### 1. Create A Task
+
+Submit a local repository path and a question.
+
+Example input:
+
+```json
+{
+  "repo_path": "D:\RepoPilot-Lite",
+  "question": "How should we add a new repository analysis feature?"
+}
+```
+
+### 2. Run The Task
+
+Call `POST /tasks/{task_id}/run`. The backend moves through planning, execution, context collection, and summarization.
+
+### 3. Inspect Result
+
+Example output fields:
+
+```json
+{
+  "status": "SUCCESS",
+  "result": {
+    "repo_summary": "Repository summary text",
+    "key_files": ["README.md", "repopilot_lite/main.py"],
+    "modification_plan": ["Confirm existing behavior", "Design the smallest code change"],
+    "risk_notes": ["This prototype only plans changes."],
+    "llm_used": false
+  }
+}
+```
+
+### 4. Inspect Logs
+
+Call `GET /tasks/{task_id}/logs` to see `STARTED`, `SUCCESS`, `FAILED`, and bounded `RETRY` entries from the execution path.
+
+## Product Boundary
+
+- It does not automatically edit files.
+- It does not run arbitrary shell commands.
+- It focuses on repository understanding and modification planning.
+- It keeps execution observable and bounded.
 
 ## Project Structure
 
@@ -27,6 +81,8 @@ repopilot-lite/
 |   +-- tools.py       # ToolRegistry and repository tools
 |   +-- llm_client.py  # Optional OpenAI-compatible summarizer client
 |   +-- storage.py     # JSON file persistence
++-- docs/
+|   +-- release_notes_v0.2.md
 +-- tests/
 |   +-- test_api.py
 +-- data/              # Created at runtime for tasks.json and logs.json
@@ -61,37 +117,14 @@ Open the API docs at:
 http://127.0.0.1:8000/docs
 ```
 
-## Optional LLM Configuration
-
-The app runs without LLM credentials. When no key is configured, `summarize_repo` uses the rule-based fallback and returns `llm_used: false`.
-
-To enable the optional OpenAI-compatible summarizer:
-
-```bash
-set OPENAI_API_KEY=your_key
-set OPENAI_BASE_URL=https://api.openai.com/v1
-set OPENAI_MODEL=gpt-4o-mini
-```
-
-If the LLM request fails, the tool falls back to the rule summarizer and still returns a valid task result with `llm_used: false`.
-
-## API Examples
+## API
 
 ### Create Task
 
 ```bash
 curl -X POST http://127.0.0.1:8000/tasks ^
   -H "Content-Type: application/json" ^
-  -d "{\"repo_path\":\"D:\\RepoPilot-Lite\",\"question\":\"How should we add a new repository analysis feature?\"}"
-```
-
-Response:
-
-```json
-{
-  "task_id": "9e1d47b8-0b42-4e0d-9e4e-9b33c21b8f5a",
-  "status": "PENDING"
-}
+  -d "{"repo_path":"D:\\RepoPilot-Lite","question":"How should we add a new repository analysis feature?"}"
 ```
 
 ### Run Task
@@ -106,33 +139,11 @@ curl -X POST http://127.0.0.1:8000/tasks/{task_id}/run
 curl http://127.0.0.1:8000/tasks/{task_id}
 ```
 
-The response includes task status, plan, result, and error information. The v0.2 result includes:
-
-```json
-{
-  "repo_summary": "Repository summary text",
-  "key_files": ["README.md", "repopilot_lite/main.py"],
-  "modification_plan": [
-    {
-      "title": "Confirm existing behavior",
-      "target_files": ["README.md"],
-      "action": "Read the key files and map the current request flow before editing.",
-      "reason": "The requested change should be grounded in the current implementation first."
-    }
-  ],
-  "risk_notes": ["This prototype only plans changes; it does not edit files automatically."],
-  "llm_used": false,
-  "suggestions": ["Inspect the listed key files before changing behavior."]
-}
-```
-
 ### Get Logs
 
 ```bash
 curl http://127.0.0.1:8000/tasks/{task_id}/logs
 ```
-
-Retry logs from the Agent Loop use `status: RETRY`.
 
 ### Get Tools
 
@@ -152,7 +163,7 @@ curl http://127.0.0.1:8000/tools
 
 ## Agent Loop
 
-RepoPilot Lite keeps the loop intentionally small and bounded:
+RepoPilot-Lite keeps the loop intentionally small and bounded:
 
 ```text
 initial keyword search
@@ -173,23 +184,21 @@ The output is planning-focused. Each modification step contains:
 - `action`: what a coding agent or developer should do next.
 - `reason`: why the step matters.
 
-RepoPilot Lite does not automatically edit files. It helps identify what to inspect, where changes may belong, and what risks should be checked first.
+RepoPilot-Lite helps identify what to inspect, where changes may belong, and what risks should be checked first.
 
-## Demo Case
+## Optional LLM Configuration
 
-1. Start the server with Uvicorn.
-2. Create a task for this repository:
+The app runs without LLM credentials. When no key is configured, `summarize_repo` uses the rule-based fallback and returns `llm_used: false`.
 
-```json
-{
-  "repo_path": "D:\\RepoPilot-Lite",
-  "question": "How should we add a new repository analysis feature?"
-}
+To enable the optional OpenAI-compatible summarizer:
+
+```bash
+set OPENAI_API_KEY=your_key
+set OPENAI_BASE_URL=https://api.openai.com/v1
+set OPENAI_MODEL=gpt-4o-mini
 ```
 
-3. Run the task.
-4. Inspect `/tasks/{task_id}` for `modification_plan`, `risk_notes`, and `llm_used`.
-5. Inspect `/tasks/{task_id}/logs` to see each tool step and any `RETRY` logs.
+If the LLM request fails, the tool falls back to the rule summarizer and still returns a valid task result with `llm_used: false`.
 
 ## State Machine
 
@@ -209,12 +218,16 @@ Runtime data is stored under `data/`:
 
 This is enough for a prototype and easy to inspect manually. It is not intended for high concurrency or production durability.
 
+## Release Notes
+
+See [v0.2.0 release notes](docs/release_notes_v0.2.md).
+
 ## Roadmap
 
-- Add more repository analysis tools, such as dependency file detection and entrypoint discovery.
-- Add richer modification planning heuristics by language or framework.
-- Add safer path allowlists for local repository access.
-- Add stronger tests for failure paths and retry behavior.
-- Add pagination or response trimming for large repositories.
-- Replace JSON storage if concurrent task execution becomes important.
-- Keep the app backend-only unless a frontend becomes necessary for demo workflows.
+These are planned directions, not implemented features:
+
+- Entrypoint / dependency detection.
+- Test-aware modification planning.
+- Path safety / allowlist.
+- MCP-style tool interface.
+- Evaluator-style plan review.
